@@ -27,13 +27,6 @@ def formatting_prompts_func(example):
 # Load and split dataset properly
 dataset = load_dataset("json", data_files="output.jsonl", split="train")
 
-# Filter out examples that are too long to avoid OOM
-def filter_length(example):
-    text = formatting_prompts_func(example)
-    return len(tokenizer.encode(text)) <= 2048
-
-dataset = dataset.filter(filter_length)
-
 # Check minimum dataset size
 if len(dataset) < 2:
     raise ValueError(f"Dataset too small: {len(dataset)} examples. Need at least 2 examples for training.")
@@ -65,6 +58,17 @@ model = AutoModelForCausalLM.from_pretrained(
     trust_remote_code=True,
     low_cpu_mem_usage=True,  # Reduce CPU memory usage during loading
 )
+
+num_classes = 8
+model.lm_head = torch.nn.Linear(
+    in_features = model.model.embed_tokens.embedding_dim,
+    out_features = num_classes
+)
+
+for param in model.layers[-1].parameters():
+    param.requires_grad = True
+for param in model.norm.parameters():
+    param.requires_grad = True
 
 # Prepare model for k-bit training (important for QLoRA)
 model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)

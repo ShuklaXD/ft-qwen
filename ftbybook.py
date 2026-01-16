@@ -223,7 +223,7 @@ def train_classifier_simple(model, train_loader, val_loader, optimizer, device, 
             loss = calc_loss_batch(
                 input_batch, target_batch, model, device
             )
-            
+
             # Normalize loss to account for gradient accumulation
             loss = loss / grad_accumulation_steps
             loss.backward()

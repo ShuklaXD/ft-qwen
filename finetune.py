@@ -1,9 +1,8 @@
 import torch
 import os
 from datasets import load_dataset
-from trl import SFTTrainer
-from peft import LoraConfig, prepare_model_for_kbit_training
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TrainingArguments
+from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model, TaskType
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, BitsAndBytesConfig, TrainingArguments, Trainer, DataCollatorWithPadding
 
 # 1. Setup
 MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
@@ -20,6 +19,13 @@ tokenizer.pad_token = tokenizer.eos_token # Fix for Qwen missing pad token
 # 3. Load & Format Dataset
 # We manually format the chat into a single string to avoid SFTTrainer guessing errors
 def formatting_prompts_func(example):
+    """
+    Formats the chat messages into a single string using the tokenizer's chat template.
+    This function is crucial for preparing the dataset in a format suitable for SFTTrainer,
+    preventing potential errors that could arise from the trainer trying to guess the format.
+    It takes an example dictionary containing a list of messages and applies the
+    pre-defined chat template, ensuring consistent input formatting for the model.
+    """
     # Apply the chat template (User: ... Assistant: ...)
     text = tokenizer.apply_chat_template(example["messages"], tokenize=False, add_generation_prompt=False)
     return text
@@ -40,6 +46,28 @@ dataset_split = dataset.train_test_split(test_size=test_size, seed=42)
 train_dataset = dataset_split["train"]
 eval_dataset = dataset_split["test"]
 
+# Process data for classification
+def process_data(example):
+    messages = example["messages"]
+    # User content is the prompt
+    prompt = tokenizer.apply_chat_template([messages[0]], tokenize=False, add_generation_prompt=True)
+    input_ids = tokenizer(prompt).input_ids
+    
+    # Assistant content is the label (e.g. "C1")
+    label_str = messages[1]["content"].strip()
+    try:
+        if label_str.startswith("C") and label_str[1:].isdigit():
+            label = int(label_str[1:]) - 1
+        else:
+            label = 0 # Fallback
+    except:
+        label = 0
+        
+    return {"input_ids": input_ids, "labels": label}
+
+train_dataset = train_dataset.map(process_data, remove_columns=["messages"])
+eval_dataset = eval_dataset.map(process_data, remove_columns=["messages"])
+
 # 4. Load Model (Low Memory Mode with optimizations)
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -49,8 +77,10 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_storage=torch.bfloat16,  # Storage dtype
 )
 
-model = AutoModelForCausalLM.from_pretrained(
+num_classes = 8
+model = AutoModelForSequenceClassification.from_pretrained(
     MODEL_NAME,
+    num_labels=num_classes,
     quantization_config=bnb_config,
     device_map="auto",
     attn_implementation="sdpa",  # Use Flash Attention 2 if available, else standard
@@ -58,17 +88,7 @@ model = AutoModelForCausalLM.from_pretrained(
     trust_remote_code=True,
     low_cpu_mem_usage=True,  # Reduce CPU memory usage during loading
 )
-
-num_classes = 8
-model.lm_head = torch.nn.Linear(
-    in_features = model.model.embed_tokens.embedding_dim,
-    out_features = num_classes
-)
-
-for param in model.layers[-1].parameters():
-    param.requires_grad = True
-for param in model.norm.parameters():
-    param.requires_grad = True
+model.config.pad_token_id = tokenizer.pad_token_id
 
 # Prepare model for k-bit training (important for QLoRA)
 model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
@@ -83,8 +103,9 @@ lora_config_kwargs = {
     "lora_alpha": 128,  # 2x rank for optimal scaling
     "lora_dropout": 0.1,  # Slightly higher dropout for regularization
     "bias": "none",
-    "task_type": "CAUSAL_LM",
+    "task_type": TaskType.SEQ_CLS,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],  # All attention and MLP modules
+    "modules_to_save": ["score"],
 }
 
 # Add advanced features if available in PEFT version
@@ -97,6 +118,7 @@ except Exception:
     pass
 
 peft_config = LoraConfig(**lora_config_kwargs)
+model = get_peft_model(model, peft_config)
 
 # 6. Training Arguments (Optimized for 8GB VRAM and better results)
 # Check if paged optimizer is available
@@ -143,13 +165,12 @@ training_args = TrainingArguments(
 )
 
 # 7. Start Trainer with enhanced configuration
-trainer = SFTTrainer(
+trainer = Trainer(
     model=model,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
-    peft_config=peft_config,
     args=training_args,
-    formatting_func=formatting_prompts_func,  # Explicit formatting
+    data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
 )
 
 print(f"Training dataset size: {len(train_dataset)}")

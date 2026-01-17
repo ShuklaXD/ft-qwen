@@ -1,5 +1,7 @@
 import torch
 import os
+import numpy as np
+from collections import Counter
 from datasets import load_dataset
 from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model, TaskType
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, BitsAndBytesConfig, TrainingArguments, Trainer, DataCollatorWithPadding
@@ -89,6 +91,39 @@ train_dataset = train_dataset.map(process_data, remove_columns=["messages"])
 print(f"Sample processed training example: {train_dataset[0]}")
 eval_dataset = eval_dataset.map(process_data, remove_columns=["messages"])
 print(f"Sample processed evaluation example: {eval_dataset[0]}")
+
+# Balance the datasets
+def balance_dataset(dataset):
+    """Balances the dataset to have an equal number of examples for each label using undersampling."""
+    if "labels" not in dataset.column_names:
+        raise ValueError("Dataset must contain a 'labels' column.")
+
+    labels = dataset["labels"]
+    class_counts = Counter(labels)
+    
+    if len(class_counts) < 2:
+        print("Dataset has only one class, no balancing needed.")
+        return dataset
+
+    min_class_count = min(class_counts.values())
+    
+    balanced_indices = []
+    for label in class_counts.keys():
+        # Get indices for the current label
+        indices = np.where(np.array(labels) == label)[0]
+        # Randomly sample indices
+        sampled_indices = np.random.choice(indices, min_class_count, replace=False)
+        balanced_indices.extend(sampled_indices)
+        
+    # Shuffle the balanced indices to ensure random order
+    np.random.shuffle(balanced_indices)
+    
+    return dataset.select(balanced_indices)
+
+print("Balancing training dataset...")
+train_dataset = balance_dataset(train_dataset)
+print("Balancing evaluation dataset...")
+eval_dataset = balance_dataset(eval_dataset)
 
 # 4. Load Model (Low Memory Mode with optimizations)
 bnb_config = BitsAndBytesConfig(

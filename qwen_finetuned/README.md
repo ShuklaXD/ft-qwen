@@ -5,9 +5,7 @@ model_name: qwen_finetuned
 tags:
 - base_model:adapter:Qwen/Qwen2-1.5B-Instruct
 - lora
-- sft
 - transformers
-- trl
 licence: license
 pipeline_tag: text-generation
 ---
@@ -37,12 +35,12 @@ This model was trained with SFT.
 
 ### Framework versions
 
-- PEFT 0.18.0
+- PEFT 0.18.1
 - TRL: 0.26.2
-- Transformers: 4.57.3
+- Transformers: 4.57.5
 - Pytorch: 2.9.1
-- Datasets: 4.4.2
-- Tokenizers: 0.22.1
+- Datasets: 4.5.0
+- Tokenizers: 0.22.2
 
 ## Citations
 

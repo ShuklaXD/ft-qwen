@@ -46,27 +46,49 @@ dataset_split = dataset.train_test_split(test_size=test_size, seed=42)
 train_dataset = dataset_split["train"]
 eval_dataset = dataset_split["test"]
 
+# Define Class Mapping for C1 to C8
+num_classes = 8
+id2label = {i: f"C{i+1}" for i in range(num_classes)}
+label2id = {v: k for k, v in id2label.items()}
+
 # Process data for classification
 def process_data(example):
     messages = example["messages"]
+    
+    # Validation
+    if not messages or len(messages) < 1:
+        return {"input_ids": [], "labels": 0}
+
     # User content is the prompt
     prompt = tokenizer.apply_chat_template([messages[0]], tokenize=False, add_generation_prompt=True)
     input_ids = tokenizer(prompt).input_ids
     
     # Assistant content is the label (e.g. "C1")
-    label_str = messages[1]["content"].strip()
-    try:
-        if label_str.startswith("C") and label_str[1:].isdigit():
-            label = int(label_str[1:]) - 1
-        else:
-            label = 0 # Fallback
-    except:
+    # Handle cases where messages might be missing the assistant response
+    if len(messages) > 1:
+        label_str = messages[1]["content"].strip()
+        try:
+            # Map "C1" -> 0, "C8" -> 7
+            if label_str in label2id:
+                label = label2id[label_str]
+            elif label_str.startswith("C") and label_str[1:].isdigit():
+                label = int(label_str[1:]) - 1
+            else:
+                label = 0 
+        except:
+            label = 0
+    else:
         label = 0
+        
+    # Clamp label to valid range
+    label = max(0, min(label, num_classes - 1))
         
     return {"input_ids": input_ids, "labels": label}
 
 train_dataset = train_dataset.map(process_data, remove_columns=["messages"])
+print(f"Sample processed training example: {train_dataset[0]}")
 eval_dataset = eval_dataset.map(process_data, remove_columns=["messages"])
+print(f"Sample processed evaluation example: {eval_dataset[0]}")
 
 # 4. Load Model (Low Memory Mode with optimizations)
 bnb_config = BitsAndBytesConfig(
@@ -77,14 +99,15 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_storage=torch.bfloat16,  # Storage dtype
 )
 
-num_classes = 8
 model = AutoModelForSequenceClassification.from_pretrained(
     MODEL_NAME,
     num_labels=num_classes,
+    id2label=id2label,
+    label2id=label2id,
     quantization_config=bnb_config,
     device_map="auto",
     attn_implementation="sdpa",  # Use Flash Attention 2 if available, else standard
-    torch_dtype=torch.bfloat16,  # Ensure consistent dtype
+    dtype=torch.bfloat16,  # Ensure consistent dtype
     trust_remote_code=True,
     low_cpu_mem_usage=True,  # Reduce CPU memory usage during loading
 )
@@ -106,6 +129,7 @@ lora_config_kwargs = {
     "task_type": TaskType.SEQ_CLS,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],  # All attention and MLP modules
     "modules_to_save": ["score"],
+    "layers_to_transform": [model.config.num_hidden_layers - 1], # Only finetune the last layer
 }
 
 # Add advanced features if available in PEFT version

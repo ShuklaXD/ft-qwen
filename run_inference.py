@@ -51,7 +51,6 @@ print(f"\nRunning classification on {len(messages)} examples...")
 
 for i, message in enumerate(messages):
     print(f"\n--- Example {i+1} ---")
-    print(f"Input Message:\n{message}\n")
     
     # Prepare single input
     # Wrap the message in a list because apply_chat_template expects a list of messages (conversation history)

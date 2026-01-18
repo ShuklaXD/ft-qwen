@@ -50,12 +50,16 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         quantization_config=quant_config,
-        device_map="auto",
+        device_map={"": "cuda:0"},
         trust_remote_code=True,
     )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-    model.to(device)
+    device = next(model.parameters()).device
+    print("Model device:", device)
+
+    if device.type != "cuda":
+        raise RuntimeError("Model is NOT on GPU — aborting")
+    _ = torch.empty(1, device="cuda")
+
 
     model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)

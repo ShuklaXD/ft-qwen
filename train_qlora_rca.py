@@ -1,6 +1,5 @@
 from transformers import Trainer
 
-
 def tokenize(example, tokenizer, max_len):
     messages = example["messages"]
 

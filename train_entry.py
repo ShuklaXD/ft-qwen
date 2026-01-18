@@ -77,10 +77,10 @@ def main():
     )
 
     eval_ds = None
-    evaluation_strategy = "no"
+    eval_strategy = "no"
 
     if args.stage == "stage2":
-        evaluation_strategy = "epoch"
+        eval_strategy = "epoch"
         eval_ds = load_dataset("json", data_files=args.eval_file, split="train")
         eval_ds = eval_ds.map(
             lambda x: tokenize(x, tokenizer, MAX_LEN),
@@ -104,7 +104,7 @@ def main():
         fp16=True,
         gradient_checkpointing=True,
         optim="paged_adamw_8bit",
-        evaluation_strategy=evaluation_strategy,
+        eval_strategy=eval_strategy,
         save_strategy="epoch",
         save_total_limit=2,
         logging_steps=10,

@@ -36,7 +36,7 @@ def main():
     args = parse_args()
 
     MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 6144   # safer for long RCA tables
+    MAX_LEN = 4096   # safer for long RCA tables
 
     # ---------------- Tokenizer ----------------
     tokenizer = AutoTokenizer.from_pretrained(
@@ -94,6 +94,7 @@ def main():
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
+        gradient_checkpointing=True,
         fp16=True,
         logging_steps=20,
         eval_strategy="epoch",

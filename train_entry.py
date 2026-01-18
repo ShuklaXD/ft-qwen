@@ -10,6 +10,7 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from train_qlora_rca import WeightedLossTrainer, tokenize
+from data_collator import CausalLMDataCollator
 
 
 def parse_args():
@@ -87,10 +88,10 @@ def main():
             remove_columns=eval_ds.column_names,
         )
 
-    data_collator = DataCollatorWithPadding(
+
+    data_collator = CausalLMDataCollator(
         tokenizer=tokenizer,
         pad_to_multiple_of=8,
-        return_tensors="pt",
     )
 
     training_args = TrainingArguments(

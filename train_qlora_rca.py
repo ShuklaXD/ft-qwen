@@ -1,15 +1,7 @@
-import torch
 from transformers import Trainer
 
 
 def tokenize(example, tokenizer, max_len):
-    """
-    Qwen2 chat-style tokenization with:
-    - training-time tail trimming
-    - assistant-only loss labels
-    - real-sample weighting
-    """
-
     messages = example["messages"]
 
     full_text = tokenizer.apply_chat_template(
@@ -47,9 +39,7 @@ def tokenize(example, tokenizer, max_len):
             break
 
     if not found:
-        raise ValueError(
-            "Assistant tokens were trimmed away — sample cannot be trained."
-        )
+        raise ValueError("Assistant tokens lost after trimming")
 
     return {
         "input_ids": input_ids,
@@ -61,17 +51,15 @@ def tokenize(example, tokenizer, max_len):
 
 class WeightedLossTrainer(Trainer):
     """
-    IMPORTANT:
-    - We do NOT compute CE manually.
-    - We rely on model-provided loss (HF-safe).
-    - We apply real/synthetic weighting on the scalar loss.
+    Uses model-provided loss (padding-safe).
+    Applies sample-level weighting only.
     """
 
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+    def compute_loss(self, model, inputs, return_outputs=False):
         loss_weight = inputs.pop("loss_weight", None)
 
         outputs = model(**inputs)
-        loss = outputs.loss  # HF-handled, padding-safe
+        loss = outputs.loss
 
         if model.training and loss_weight is not None:
             loss = loss * loss_weight.mean()

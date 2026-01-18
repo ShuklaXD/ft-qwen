@@ -38,7 +38,7 @@ def main():
     args = parse_args()
 
     MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 2048   # stage-1 only
+    MAX_LEN = 2708   # stage-2 only
    # safer for long RCA tables
 
     # ---------------- Tokenizer ----------------
@@ -100,18 +100,19 @@ def main():
 
     # ---------------- Training args ----------------
     training_args = TrainingArguments(
-        output_dir="checkpoints/stage1",
-
-        num_train_epochs=1,
+        output_dir="checkpoints/stage2",
+        num_train_epochs=2,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=2,
-        learning_rate=2e-4,
+        per_device_eval_batch_size=1,
+        prediction_loss_only=True,
+        gradient_accumulation_steps=4,
+        learning_rate=1e-4,
+        lr_scheduler_type="cosine",
         fp16=True,
         gradient_checkpointing=True,
-        eval_strategy="no",
-        save_strategy="steps",
-        save_steps=50,
-        save_total_limit=1,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        save_total_limit=2,
         logging_steps=10,
         report_to="none",
         remove_unused_columns=False,

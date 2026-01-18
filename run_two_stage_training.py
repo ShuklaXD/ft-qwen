@@ -1,16 +1,16 @@
 import subprocess
-# Stage 1: real-only warmup
-subprocess.run([
-    "python", "train_entry.py",
-    "--train_file", "prepared_data/stage1_real_train.jsonl",
-    "--eval_file", "prepared_data/real_val.jsonl",
-    "--output_dir", "checkpoints/stage1",
-    "--num_train_epochs", "2",
-    "--learning_rate", "2e-4",
-])
+# # Stage 1: real-only warmup
+# subprocess.run([
+#     "python", "train_entry.py",
+#     "--train_file", "prepared_data/stage1_real_train.jsonl",
+#     "--eval_file", "prepared_data/real_val.jsonl",
+#     "--output_dir", "checkpoints/stage1",
+#     "--num_train_epochs", "2",
+#     "--learning_rate", "2e-4",
+# ])
 
 # Find latest checkpoint automatically
-latest_ckpt = "checkpoints/stage1"  # can use HF Trainer's latest
+latest_ckpt = "checkpoints/stage1/checkpoint-260"  # can use HF Trainer's latest
 
 # Stage 2: mixed training
 subprocess.run([

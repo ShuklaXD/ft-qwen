@@ -7,6 +7,8 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from train_qlora_rca import WeightedLossTrainer, tokenize
+from transformers import BitsAndBytesConfig
+import torch
 
 # --------------------------------------------------
 # Args
@@ -22,7 +24,7 @@ def parse_args():
     parser.add_argument("--num_train_epochs", type=int, default=3)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
     parser.add_argument("--resume_from_checkpoint", type=str, default=None)
 
     return parser.parse_args()
@@ -36,7 +38,8 @@ def main():
     args = parse_args()
 
     MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 4096   # safer for long RCA tables
+    MAX_LEN = 2048   # stage-1 only
+   # safer for long RCA tables
 
     # ---------------- Tokenizer ----------------
     tokenizer = AutoTokenizer.from_pretrained(
@@ -46,10 +49,16 @@ def main():
     )
     tokenizer.pad_token = tokenizer.eos_token
 
-    # ---------------- Model ----------------
+    quant_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4"
+    )
+
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        load_in_4bit=True,
+        quantization_config=quant_config,
         device_map="auto",
         trust_remote_code=True,
     )
@@ -91,17 +100,19 @@ def main():
 
     # ---------------- Training args ----------------
     training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        num_train_epochs=args.num_train_epochs,
-        learning_rate=args.learning_rate,
-        per_device_train_batch_size=args.per_device_train_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        gradient_checkpointing=True,
+        output_dir="checkpoints/stage1",
+
+        num_train_epochs=1,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=2,
+        learning_rate=2e-4,
         fp16=True,
-        logging_steps=20,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=2,
+        gradient_checkpointing=True,
+        eval_strategy="no",
+        save_strategy="steps",
+        save_steps=50,
+        save_total_limit=1,
+        logging_steps=10,
         report_to="none",
         remove_unused_columns=False,
     )

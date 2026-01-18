@@ -7,6 +7,7 @@ def tokenize(example, tokenizer, max_len):
     """
     Qwen2 chat-style tokenization with:
     - tail-preserving truncation
+    - strict input_ids == labels == attention_mask length
     - assistant-only loss
     - real-sample loss weighting
     """
@@ -21,19 +22,20 @@ def tokenize(example, tokenizer, max_len):
     )
 
     # Tokenize WITHOUT truncation first
-    tokenized = tokenizer(
+    enc = tokenizer(
         full_text,
         truncation=False,
         padding=False,
         add_special_tokens=True,
     )
 
-    input_ids = tokenized["input_ids"]
+    input_ids = enc["input_ids"]
 
-    # Tail-preserving truncation
+    # 🔥 Tail-preserving truncation (ONCE, before labels exist)
     if len(input_ids) > max_len:
         input_ids = input_ids[-max_len:]
 
+    # Initialize labels AFTER truncation
     labels = [-100] * len(input_ids)
 
     # Tokenize assistant answer alone
@@ -43,7 +45,7 @@ def tokenize(example, tokenizer, max_len):
         add_special_tokens=False,
     )["input_ids"]
 
-    # Find assistant span inside truncated input_ids
+    # Locate assistant span INSIDE truncated input_ids
     found = False
     for i in range(len(input_ids) - len(assistant_tokens) + 1):
         if input_ids[i:i + len(assistant_tokens)] == assistant_tokens:
@@ -56,6 +58,9 @@ def tokenize(example, tokenizer, max_len):
             "Assistant tokens not found after truncation. "
             "Increase MAX_LEN or check data formatting."
         )
+
+    # 🔒 HARD SAFETY GUARANTEE
+    assert len(input_ids) == len(labels), "input_ids / labels length mismatch"
 
     return {
         "input_ids": input_ids,
@@ -73,12 +78,14 @@ class WeightedLossTrainer(Trainer):
         outputs = model(**inputs)
         logits = outputs.logits
 
+        # Cross-entropy over tokens
         loss_fct = CrossEntropyLoss(reduction="none")
         loss = loss_fct(
             logits.view(-1, logits.size(-1)),
-            labels.view(-1)
+            labels.view(-1),
         )
 
+        # Restore batch structure
         loss = loss.view(labels.size()).mean(dim=1)
 
         # Apply weighting ONLY during training

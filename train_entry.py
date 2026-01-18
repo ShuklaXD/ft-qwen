@@ -1,28 +1,26 @@
 import argparse
+import torch
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     TrainingArguments,
     BitsAndBytesConfig,
+    DataCollatorWithPadding,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from train_qlora_rca import WeightedLossTrainer, tokenize
-import torch
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--train_file", required=True)
     parser.add_argument("--eval_file", default=None)
     parser.add_argument("--output_dir", required=True)
-
     parser.add_argument("--num_train_epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--resume_from_checkpoint", default=None)
     parser.add_argument("--stage", choices=["stage1", "stage2"], required=True)
-
     return parser.parse_args()
 
 
@@ -30,7 +28,9 @@ def main():
     args = parse_args()
 
     MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 2868
+
+    # Stage-aware MAX_LEN (from your analysis)
+    MAX_LEN = 2048 if args.stage == "stage1" else 2765
 
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_NAME,
@@ -53,6 +53,7 @@ def main():
         trust_remote_code=True,
     )
 
+    model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)
 
     lora = LoraConfig(
@@ -70,15 +71,27 @@ def main():
     model.print_trainable_parameters()
 
     train_ds = load_dataset("json", data_files=args.train_file, split="train")
-    train_ds = train_ds.map(lambda x: tokenize(x, tokenizer, MAX_LEN))
+    train_ds = train_ds.map(
+        lambda x: tokenize(x, tokenizer, MAX_LEN),
+        remove_columns=train_ds.column_names,
+    )
 
     eval_ds = None
-    eval_strategy = "no"
+    evaluation_strategy = "no"
 
     if args.stage == "stage2":
-        eval_strategy = "epoch"
+        evaluation_strategy = "epoch"
         eval_ds = load_dataset("json", data_files=args.eval_file, split="train")
-        eval_ds = eval_ds.map(lambda x: tokenize(x, tokenizer, MAX_LEN))
+        eval_ds = eval_ds.map(
+            lambda x: tokenize(x, tokenizer, MAX_LEN),
+            remove_columns=eval_ds.column_names,
+        )
+
+    data_collator = DataCollatorWithPadding(
+        tokenizer=tokenizer,
+        pad_to_multiple_of=8,
+        return_tensors="pt",
+    )
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -90,10 +103,10 @@ def main():
         lr_scheduler_type="cosine",
         fp16=True,
         gradient_checkpointing=True,
-        eval_strategy=eval_strategy,
+        optim="paged_adamw_8bit",
+        evaluation_strategy=evaluation_strategy,
         save_strategy="epoch",
         save_total_limit=2,
-        prediction_loss_only=True,
         logging_steps=10,
         report_to="none",
         remove_unused_columns=False,
@@ -105,6 +118,7 @@ def main():
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         tokenizer=tokenizer,
+        data_collator=data_collator,
     )
 
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)

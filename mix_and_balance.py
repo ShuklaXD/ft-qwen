@@ -73,6 +73,11 @@ for label in labels:
         f"total={len(class_bucket)}"
     )
 
+# -----------------------------
+# Shuffle and save
+# -----------------------------
+random.shuffle(final_dataset)
+
 with open(OUT_PATH, "w", encoding="utf-8") as f:
     for item in final_dataset:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")

@@ -55,7 +55,7 @@ class WeightedLossTrainer(Trainer):
     Applies sample-level weighting only.
     """
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         loss_weight = inputs.pop("loss_weight", None)
 
         outputs = model(**inputs)

@@ -4,44 +4,34 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     TrainingArguments,
+    BitsAndBytesConfig,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from train_qlora_rca import WeightedLossTrainer, tokenize
-from transformers import BitsAndBytesConfig
 import torch
 
-# --------------------------------------------------
-# Args
-# --------------------------------------------------
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--train_file", type=str, required=True)
-    parser.add_argument("--eval_file", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--train_file", required=True)
+    parser.add_argument("--eval_file", default=None)
+    parser.add_argument("--output_dir", required=True)
 
-    parser.add_argument("--num_train_epochs", type=int, default=3)
+    parser.add_argument("--num_train_epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
-    parser.add_argument("--resume_from_checkpoint", type=str, default=None)
+    parser.add_argument("--resume_from_checkpoint", default=None)
+    parser.add_argument("--stage", choices=["stage1", "stage2"], required=True)
 
     return parser.parse_args()
 
-
-# --------------------------------------------------
-# Main
-# --------------------------------------------------
 
 def main():
     args = parse_args()
 
     MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 2708   # stage-2 only
-   # safer for long RCA tables
+    MAX_LEN = 2868
 
-    # ---------------- Tokenizer ----------------
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_NAME,
         trust_remote_code=True,
@@ -53,7 +43,7 @@ def main():
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4"
+        bnb_4bit_quant_type="nf4",
     )
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -79,40 +69,31 @@ def main():
     model = get_peft_model(model, lora)
     model.print_trainable_parameters()
 
-    # ---------------- Dataset ----------------
-    train_ds = load_dataset(
-        "json",
-        data_files=args.train_file,
-        split="train",
-    ).map(
-        lambda x: tokenize(x, tokenizer, MAX_LEN),
-        remove_columns=["messages", "meta"],
-    )
+    train_ds = load_dataset("json", data_files=args.train_file, split="train")
+    train_ds = train_ds.map(lambda x: tokenize(x, tokenizer, MAX_LEN))
 
-    eval_ds = load_dataset(
-        "json",
-        data_files=args.eval_file,
-        split="train",
-    ).map(
-        lambda x: tokenize(x, tokenizer, MAX_LEN),
-        remove_columns=["messages", "meta"],
-    )
+    eval_ds = None
+    eval_strategy = "no"
 
-    # ---------------- Training args ----------------
+    if args.stage == "stage2":
+        eval_strategy = "epoch"
+        eval_ds = load_dataset("json", data_files=args.eval_file, split="train")
+        eval_ds = eval_ds.map(lambda x: tokenize(x, tokenizer, MAX_LEN))
+
     training_args = TrainingArguments(
-        output_dir="checkpoints/stage2",
-        num_train_epochs=2,
+        output_dir=args.output_dir,
+        num_train_epochs=args.num_train_epochs,
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
-        prediction_loss_only=True,
         gradient_accumulation_steps=4,
-        learning_rate=1e-4,
+        learning_rate=args.learning_rate,
         lr_scheduler_type="cosine",
         fp16=True,
         gradient_checkpointing=True,
-        eval_strategy="epoch",
+        eval_strategy=eval_strategy,
         save_strategy="epoch",
         save_total_limit=2,
+        prediction_loss_only=True,
         logging_steps=10,
         report_to="none",
         remove_unused_columns=False,

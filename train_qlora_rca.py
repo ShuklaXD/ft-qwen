@@ -2,43 +2,47 @@ import torch
 from torch.nn import CrossEntropyLoss
 from transformers import Trainer
 
-# --------------------------------------------------
-# Tokenization with assistant-only loss masking
-# --------------------------------------------------
 
 def tokenize(example, tokenizer, max_len):
     """
-    - Uses Qwen2 chat template
-    - Masks loss to assistant tokens only
-    - Adds per-sample loss weight
+    Correct assistant-only loss masking for Qwen2 chat format
     """
 
-    text = tokenizer.apply_chat_template(
-        example["messages"],
+    messages = example["messages"]
+
+    full_text = tokenizer.apply_chat_template(
+        messages,
         tokenize=False,
         add_generation_prompt=False,
     )
 
     tokenized = tokenizer(
-        text,
+        full_text,
         truncation=True,
         max_length=max_len,
-        padding="max_length",
+        padding=False,   # 🔥 IMPORTANT: no max_length padding
     )
 
     input_ids = tokenized["input_ids"]
-    labels = input_ids.copy()
+    labels = [-100] * len(input_ids)
 
-    assistant_token_id = tokenizer.convert_tokens_to_ids("<|assistant|>")
-    in_assistant = False
+    # Tokenize assistant content separately
+    assistant_text = messages[-1]["content"]
+    assistant_tokens = tokenizer(
+        assistant_text,
+        add_special_tokens=False,
+    )["input_ids"]
 
-    for i, tok in enumerate(labels):
-        if tok == assistant_token_id:
-            in_assistant = True
-            labels[i] = -100
-            continue
-        if not in_assistant:
-            labels[i] = -100
+    # Find assistant span
+    found = False
+    for i in range(len(input_ids) - len(assistant_tokens)):
+        if input_ids[i:i + len(assistant_tokens)] == assistant_tokens:
+            labels[i:i + len(assistant_tokens)] = assistant_tokens
+            found = True
+            break
+
+    if not found:
+        raise ValueError("Assistant tokens not found in input_ids")
 
     tokenized["labels"] = labels
     tokenized["loss_weight"] = example["meta"]["loss_weight"]
@@ -46,14 +50,10 @@ def tokenize(example, tokenizer, max_len):
     return tokenized
 
 
-# --------------------------------------------------
-# Trainer with weighted loss (training only)
-# --------------------------------------------------
-
 class WeightedLossTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.pop("labels")
-        loss_weight = inputs.pop("loss_weight")
+        loss_weight = inputs.pop("loss_weight", None)
 
         outputs = model(**inputs)
         logits = outputs.logits
@@ -66,10 +66,9 @@ class WeightedLossTrainer(Trainer):
 
         loss = loss.view(labels.size()).mean(dim=1)
 
-        # Apply weighting ONLY during training
-        if model.training:
+        # 🔥 Apply weighting ONLY during training
+        if model.training and loss_weight is not None:
             loss = loss * loss_weight
 
         loss = loss.mean()
-
         return (loss, outputs) if return_outputs else loss

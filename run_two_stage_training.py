@@ -2,17 +2,17 @@ import subprocess
 import os
 
 # -------- Stage 1: real-only warmup (NO EVAL) --------
-subprocess.run(
-    [
-        "python", "train_entry.py",
-        "--stage", "stage1",
-        "--train_file", "prepared_data/stage1_real_train.jsonl",
-        "--output_dir", "checkpoints/stage1",
-        "--num_train_epochs", "1",
-        "--learning_rate", "2e-4",
-    ],
-    check=True,
-)
+# subprocess.run(
+#     [
+#         "python", "train_entry.py",
+#         "--stage", "stage1",
+#         "--train_file", "prepared_data/stage1_real_train.jsonl",
+#         "--output_dir", "checkpoints/stage1",
+#         "--num_train_epochs", "1",
+#         "--learning_rate", "2e-4",
+#     ],
+#     check=True,
+# )
 
 # Locate latest checkpoint safely
 stage1_dir = "checkpoints/stage1"

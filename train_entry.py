@@ -53,6 +53,9 @@ def main():
         device_map="auto",
         trust_remote_code=True,
     )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    model.to(device)
 
     model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)

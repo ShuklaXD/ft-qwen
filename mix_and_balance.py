@@ -49,11 +49,12 @@ print("Target per class:", target_per_class)
 final_dataset = []
 
 for label in labels:
+    # ---- REAL FIRST (strict) ----
     real_samples = real_by_label.get(label, [])
     syn_samples = syn_by_label.get(label, [])
 
-    # Always keep all real samples
-    final_dataset.extend(real_samples)
+    # Preserve original order of real data
+    class_bucket = list(real_samples)
 
     needed = target_per_class - len(real_samples)
     if needed > 0:
@@ -61,18 +62,16 @@ for label in labels:
             syn_samples,
             min(needed, len(syn_samples))
         )
-        final_dataset.extend(sampled_syn)
+        # ---- SYNTHETIC APPENDS AFTER REAL ----
+        class_bucket.extend(sampled_syn)
+
+    final_dataset.extend(class_bucket)
 
     print(
         f"{label}: real={len(real_samples)}, "
-        f"synthetic_used={min(needed, len(syn_samples))}, "
-        f"total={len(real_samples) + min(needed, len(syn_samples))}"
+        f"synthetic_used={max(0, min(needed, len(syn_samples)))}, "
+        f"total={len(class_bucket)}"
     )
-
-# -----------------------------
-# Shuffle and save
-# -----------------------------
-random.shuffle(final_dataset)
 
 with open(OUT_PATH, "w", encoding="utf-8") as f:
     for item in final_dataset:

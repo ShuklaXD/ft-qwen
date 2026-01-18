@@ -12,7 +12,7 @@ from trl import SFTTrainer
 # Config
 # -----------------------------
 MODEL_NAME = "Qwen/Qwen1.5-1.8B"   # or Qwen/Qwen1.5-1.5B
-DATA_PATH = "synthetic_rca_chat.jsonl"
+DATA_PATH = "train_balanced.jsonl"
 OUTPUT_DIR = "./qwen_rca_qlora"
 
 MAX_SEQ_LEN = 4096

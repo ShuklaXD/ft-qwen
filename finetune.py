@@ -44,10 +44,6 @@ test_size = max(1, int(len(dataset) * 0.1))  # At least 1 example for evaluation
 if len(dataset) - test_size < 1:
     raise ValueError(f"Dataset too small to split: {len(dataset)} examples. Need at least 2 examples.")
 
-dataset_split = dataset.train_test_split(test_size=test_size, seed=42)
-train_dataset = dataset_split["train"]
-eval_dataset = dataset_split["test"]
-
 # Define Class Mapping for C1 to C8
 num_classes = 8
 id2label = {i: f"C{i+1}" for i in range(num_classes)}
@@ -87,14 +83,23 @@ def process_data(example):
         
     return {"input_ids": input_ids, "labels": label}
 
-train_dataset = train_dataset.map(process_data, remove_columns=["messages"])
-print(f"Sample processed training example: {train_dataset[0]}")
-eval_dataset = eval_dataset.map(process_data, remove_columns=["messages"])
-print(f"Sample processed evaluation example: {eval_dataset[0]}")
-
 # Balance the datasets
 def balance_dataset(dataset):
-    """Balances the dataset to have an equal number of examples for each label using undersampling."""
+    """Balances the dataset to have an equal number of examples for each label using undersampling.
+    This function identifies the class with the fewest examples and then randomly undersamples all
+    other classes to match that minimum count. This ensures that the returned dataset
+    has an equal distribution of examples across all present labels, preventing
+    model bias towards majority classes.
+    It does not generate new data; instead, it selects a subset of the existing data.
+    Args:
+        dataset (Dataset): The input dataset, which must contain a 'labels' column
+                           with integer or categorical labels.
+    Returns:
+        Dataset: A new dataset where each class has the same number of examples,
+                 equal to the count of the smallest class in the original dataset.
+    Raises:
+        ValueError: If the input `dataset` does not contain a 'labels' column.
+    """
     if "labels" not in dataset.column_names:
         raise ValueError("Dataset must contain a 'labels' column.")
 
@@ -120,10 +125,21 @@ def balance_dataset(dataset):
     
     return dataset.select(balanced_indices)
 
+dataset = dataset.map(process_data, remove_columns=["messages"])
+balanced_dataset = balance_dataset(dataset)
+
+dataset_split = dataset.train_test_split(test_size=test_size, seed=42)
+train_dataset = dataset_split["train"]
+print(f"Training dataset size: {len(train_dataset)}")
+print(train_dataset)
+eval_dataset = dataset_split["test"]
+
+
 print("Balancing training dataset...")
-train_dataset = balance_dataset(train_dataset)
+print(train_dataset["labels"])
 print("Balancing evaluation dataset...")
 eval_dataset = balance_dataset(eval_dataset)
+print(eval_dataset["labels"])
 
 # 4. Load Model (Low Memory Mode with optimizations)
 bnb_config = BitsAndBytesConfig(
@@ -240,7 +256,7 @@ print("\nStarting training...")
 print("=" * 50)
 
 # Train with automatic mixed precision
-trainer.train()
+# trainer.train()
 
 print("\n" + "=" * 50)
 print("Training completed! Saving model...")

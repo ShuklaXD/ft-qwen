@@ -5,7 +5,7 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
 )
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from train_qlora_rca import WeightedLossTrainer, tokenize
 
 # --------------------------------------------------
@@ -53,6 +53,8 @@ def main():
         device_map="auto",
         trust_remote_code=True,
     )
+
+    model = prepare_model_for_kbit_training(model)
 
     lora = LoraConfig(
         r=8,

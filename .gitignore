@@ -1,3 +1,5 @@
 .qwen-env/
 .venv/
+__pycache__/
 .qwen_finetuned/
+venv/

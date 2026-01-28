@@ -29,7 +29,8 @@ def main():
     args = parse_args()
 
     MODEL = "Qwen/Qwen2-1.5B-Instruct"
-    MAX_LEN = 2048 if args.stage == "stage1" else 2765
+    # MAX_LEN = 4096 if args.stage == "stage1" else 2765
+    MAX_LEN = 4096 # Use full length for both stages
 
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL,

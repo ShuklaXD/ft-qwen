@@ -8,7 +8,7 @@ subprocess.run(
         "--stage", "stage1",
         "--train_file", "prepared_data/stage1_real_train.jsonl",
         "--output_dir", "checkpoints/stage1",
-        "--num_train_epochs", "1",
+        "--num_train_epochs", "4",
         "--learning_rate", "2e-4",
     ],
     check=True,

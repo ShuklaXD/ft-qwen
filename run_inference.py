@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Bits
 from peft import AutoPeftModelForSequenceClassification
 
 # 1. Setup paths and config
-adapter_path = "./qwen_finetuned"
+adapter_path = "./checkpoints/stage2"  # Path to the trained LoRA adapter
 
 # Define Class Mapping (Matches training)
 num_classes = 8

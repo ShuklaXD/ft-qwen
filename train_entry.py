@@ -6,21 +6,21 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
     BitsAndBytesConfig,
-    DataCollatorWithPadding,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from train_qlora_rca import WeightedLossTrainer, tokenize
+
+from train_qlora_rca import tokenize, WeightedLossTrainer
 from data_collator import CausalLMDataCollator
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_file", required=True)
-    parser.add_argument("--eval_file", default=None)
+    parser.add_argument("--eval_file")
     parser.add_argument("--output_dir", required=True)
-    parser.add_argument("--num_train_epochs", type=int, default=2)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--resume_from_checkpoint", default=None)
+    parser.add_argument("--num_train_epochs", type=int, default=1)
+    parser.add_argument("--learning_rate", type=float, default=2e-4)
+    parser.add_argument("--resume_from_checkpoint")
     parser.add_argument("--stage", choices=["stage1", "stage2"], required=True)
     return parser.parse_args()
 
@@ -28,38 +28,35 @@ def parse_args():
 def main():
     args = parse_args()
 
-    MODEL_NAME = "Qwen/Qwen2-1.5B-Instruct"
-
-    # Stage-aware MAX_LEN (from your analysis)
+    MODEL = "Qwen/Qwen2-1.5B-Instruct"
     MAX_LEN = 2048 if args.stage == "stage1" else 2765
 
     tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_NAME,
+        MODEL,
         trust_remote_code=True,
         padding_side="right",
     )
     tokenizer.pad_token = tokenizer.eos_token
 
-    quant_config = BitsAndBytesConfig(
+    quant = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
     )
 
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=quant_config,
-        device_map={"": "cuda:0"},
+        MODEL,
+        quantization_config=quant,
+        device_map={"": "cuda:0"},   # FORCE GPU
         trust_remote_code=True,
     )
+
+    # Hard GPU assert
     device = next(model.parameters()).device
     print("Model device:", device)
-
     if device.type != "cuda":
-        raise RuntimeError("Model is NOT on GPU — aborting")
-    _ = torch.empty(1, device="cuda")
-
+        raise RuntimeError("Model is NOT on GPU")
 
     model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)
@@ -70,7 +67,7 @@ def main():
         lora_dropout=0.03,
         target_modules=[
             "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj"
+            "gate_proj", "up_proj", "down_proj",
         ],
         task_type="CAUSAL_LM",
     )
@@ -95,7 +92,6 @@ def main():
             remove_columns=eval_ds.column_names,
         )
 
-
     data_collator = CausalLMDataCollator(
         tokenizer=tokenizer,
         pad_to_multiple_of=8,
@@ -108,13 +104,11 @@ def main():
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=args.learning_rate,
-        lr_scheduler_type="cosine",
         fp16=True,
         gradient_checkpointing=True,
         optim="paged_adamw_8bit",
         eval_strategy=eval_strategy,
         save_strategy="epoch",
-        save_total_limit=2,
         logging_steps=10,
         report_to="none",
         remove_unused_columns=False,
@@ -125,7 +119,6 @@ def main():
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tokenizer,
         data_collator=data_collator,
     )
 

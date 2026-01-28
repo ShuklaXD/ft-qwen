@@ -1,13 +1,10 @@
 import torch
 
-
 class CausalLMDataCollator:
     """
-    Fully controlled collator for causal LM.
-    Guarantees:
-      - input_ids, labels, attention_mask have identical shapes
-      - labels are padded with -100
-      - input_ids padded with pad_token_id
+    Custom collator that guarantees:
+    - input_ids, labels, attention_mask have identical shapes
+    - labels padded with -100
     """
 
     def __init__(self, tokenizer, pad_to_multiple_of=None):
@@ -15,7 +12,6 @@ class CausalLMDataCollator:
         self.pad_to_multiple_of = pad_to_multiple_of
 
     def __call__(self, features):
-        # Extract loss weights safely
         loss_weights = torch.tensor(
             [f.pop("loss_weight", 1.0) for f in features],
             dtype=torch.float32,
@@ -52,7 +48,7 @@ class CausalLMDataCollator:
             "loss_weight": loss_weights,
         }
 
-        # 🔒 HARD ASSERT (debug guarantee)
+        # Hard invariant
         assert batch["input_ids"].shape == batch["labels"].shape
 
         return batch
